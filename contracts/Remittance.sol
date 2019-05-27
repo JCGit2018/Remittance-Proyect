@@ -17,21 +17,20 @@ import "./Pausable.sol";
   
   contract Remittance is Pausable{
       
-    struct Remittances {
+    struct RemittanceStruct {
         address exchanger;
         address thesender; 
         uint    thelimit;
         bool    withdraw; //True of false if the funds have been withdrawn by Carol or Alice after timelimit
     }
     
-      mapping(bytes32 => Remittances) public remittances; 
+      mapping(bytes32 => RemittanceStruct) public remittances; 
       
             
       //event logs
-      event LogContractCreated(address owner);
       event LogRemitSend(address sender, address exchanger, uint limit, bytes32 hashOfBoth);
-      event LogWithdrawal(address sender, address receiver, uint amount);
-      event LogTimeUpWithdraw(address sender, uint amount);
+      event LogWithdrawal(address sender, address exchanger, uint amount);
+      event LogCancelRemittance(address sender, uint amount);
       
       mapping(address => uint) public balances; 
       
@@ -39,9 +38,17 @@ import "./Pausable.sol";
       
       
     constructor() public{
-       emit LogContractCreated(msg.sender);
-      }
+    }
       
+    //Function to guarantee correct hash implementation during the tests
+    function giveMyHash(bytes32 one, bytes32 two)
+    pure
+    public
+    returns (bytes32 yourHash)
+   {
+    return keccak256(abi.encodePacked(one,two));
+   }
+
   
       
     function sendRemittance(bytes32 hashOfBoth, uint limit, address exchanger)
@@ -53,11 +60,11 @@ import "./Pausable.sol";
     require(limit <= 604800);
     remittances[hashOfBoth].exchanger = exchanger;
     remittances[hashOfBoth].thelimit = limit + block.timestamp; 
-    remittances[hashOfBoth].thesender =getOwner();
+    remittances[hashOfBoth].thesender = msg.sender;
     remittances[hashOfBoth].withdraw = false;
 
     //Send owner of contract a cut 
-    balances[getOwner()] += msg.value/20; 
+    balances[msg.sender] += msg.value/20; 
     balances[exchanger] += msg.value-(msg.value/20);
     
     emit LogRemitSend(msg.sender, exchanger, limit, hashOfBoth);
@@ -65,42 +72,41 @@ import "./Pausable.sol";
     }
       
  
-    function exchangerWithdrawl(string memory pwsswordBob, string memory passwordCarol)
+    function exchangerWithdrawl(bytes32 passwordBob, bytes32 passwordCarol)
     public
     returns (bool success)
     {
-    bytes32 completepass = keccak256(abi.encodePacked(pwsswordBob, passwordCarol));
+    bytes32 completepass = keccak256(abi.encodePacked(passwordBob, passwordCarol));
     address exchanger = remittances[completepass].exchanger; 
     require(msg.sender == exchanger);
-    require(block.timestamp >= remittances[completepass].thelimit);
+    require(block.timestamp < remittances[completepass].thelimit);
     require(balances[msg.sender] > 0);
     require(remittances[completepass].withdraw == false);
     uint tosend = balances[msg.sender];
     balances[msg.sender] = 0;
     remittances[completepass].withdraw = true; 
-    msg.sender.transfer(tosend);
     emit LogWithdrawal(remittances[completepass].thesender, exchanger, tosend);   
+    msg.sender.transfer(tosend);
     return true;
    }
     
     /* If Carol fails to withdrawl funds before the timeline ends, 
 Alice needs to be able retrieve funds. This function allows Alice to withdrawl funds after the deadline.*/
 
-    function timeLimitUp(bytes32 hashOfBoth)
+    function cancelRemittance(bytes32 hashOfBoth)
     public
     returns (bool success)
     {
-    address owner=getOwner();
     require(block.timestamp >=  remittances[hashOfBoth].thelimit);
-    require(remittances[hashOfBoth].thesender == owner);
+    require(remittances[hashOfBoth].thesender == msg.sender);
     require(remittances[hashOfBoth].withdraw == false);
 
     /* Allowing Alice  to withdraw the amount that she allotted to Carol. */
     uint tosend = balances[remittances[hashOfBoth].exchanger];
     balances[remittances[hashOfBoth].exchanger] = 0; 
     remittances[hashOfBoth].withdraw = true; 
+    emit LogCancelRemittance(msg.sender, tosend);    
     msg.sender.transfer(tosend);
-    emit LogTimeUpWithdraw(msg.sender, tosend);
     return true;
    }  
       

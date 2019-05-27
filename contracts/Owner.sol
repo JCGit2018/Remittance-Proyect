@@ -19,6 +19,7 @@ contract Owner {
     }
  
     function changeOwner(address newOwner) public onlyOwner returns (bool success) {
+        require(newOwner != address(0), "Owner: new owner is the zero address");
         owner = newOwner;
         emit LogChangeOwner(msg.sender, newOwner);
         return true;
